@@ -1,0 +1,74 @@
+name: CI/CD - Build, Scan, and Push to ECR
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REGISTRY: 093747270488.dkr.ecr.eu-west-2.amazonaws.com
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - frontend
+          - cartservice
+          - productcatalogservice
+          - currencyservice
+          - paymentservice
+          - shippingservice
+          - emailservice
+          - checkoutservice
+          - recommendationservice
+          - adservice
+          - loadgenerator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determine build context
+        id: context
+        run: |
+          if [ "${{ matrix.service }}" = "cartservice" ]; then
+            echo "path=src/cartservice/src" >> $GITHUB_OUTPUT
+          else
+            echo "path=src/${{ matrix.service }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ matrix.service }}:${{ github.sha }} ${{ steps.context.outputs.path }}
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.service }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Tag image for ECR
+        run: |
+          docker tag ${{ matrix.service }}:${{ github.sha }} ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          docker tag ${{ matrix.service }}:${{ github.sha }} ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:latest
+
+      - name: Push image to ECR
+        run: |
+          docker push ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:latest
+
