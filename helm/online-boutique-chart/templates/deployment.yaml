@@ -16,6 +16,8 @@ spec:
       labels:
         app: {{ $name }}
     spec:
+      serviceAccountName: boutique-app
+      automountServiceAccountToken: false
       containers:
         - name: {{ $name }}
           image: "{{ $.Values.image.registry }}/{{ $name }}:{{ $.Values.image.tag }}"
